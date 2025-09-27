@@ -1,0 +1,92 @@
+# Importa as bibliotecas necessárias
+import cv2
+import mediapipe as mp
+from scipy.spatial import distance as dist
+import pygame
+
+# --- CONSTANTES ---
+EAR_THRESH = 0.25 
+EAR_CONSEC_FRAMES = 15
+
+# --- INICIALIZAÇÃO ---
+COUNTER = 0
+ALARM_ON = False
+
+# Inicializa o mixer do pygame para tocar o som
+pygame.mixer.init()
+# Carrega o arquivo de som do alarme
+som_alarme = pygame.mixer.Sound('alerta.wav') 
+
+# Inicializa o MediaPipe Face Mesh
+mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(
+    max_num_faces=1,
+    refine_landmarks=True,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5)
+
+mp_drawing = mp.solutions.drawing_utils 
+
+(lStart, lEnd) = (159, 145)
+(rStart, rEnd) = (386, 374)
+
+def eye_aspect_ratio(eye_landmarks):
+    A = dist.euclidean(eye_landmarks[1], eye_landmarks[5])
+    B = dist.euclidean(eye_landmarks[2], eye_landmarks[4])
+    C = dist.euclidean(eye_landmarks[0], eye_landmarks[3])
+    ear = (A + B) / (2.0 * C)
+    return ear
+
+print("[INFO] Acessando a webcam...")
+cap = cv2.VideoCapture(0)
+
+# --- LOOP PRINCIPAL ---
+while cap.isOpened():
+    success, image = cap.read()
+    if not success:
+        continue
+
+    image.flags.writeable = False
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    results = face_mesh.process(image)
+    image.flags.writeable = True
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+    if results.multi_face_landmarks:
+        for face_landmarks in results.multi_face_landmarks:
+            landmarks = face_landmarks.landmark
+            h, w, _ = image.shape
+            
+            left_eye_pts = [(int(landmarks[i].x * w), int(landmarks[i].y * h)) for i in [362, 385, 387, 263, 373, 380]]
+            right_eye_pts = [(int(landmarks[i].x * w), int(landmarks[i].y * h)) for i in [33, 160, 158, 133, 153, 144]]
+
+            left_ear = eye_aspect_ratio(left_eye_pts)
+            right_ear = eye_aspect_ratio(right_eye_pts)
+            ear = (left_ear + right_ear) / 2.0
+            
+            cv2.putText(image, f"EAR: {ear:.2f}", (300, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            if ear < EAR_THRESH:
+                COUNTER += 1
+                if COUNTER >= EAR_CONSEC_FRAMES:
+                    if not ALARM_ON:
+                        ALARM_ON = True
+                        som_alarme.play(loops=-1) # <<< ALTERAÇÃO APLICADA AQUI
+                    
+                    cv2.putText(image, "ALERTA DE SONOLENCIA!", (10, 30),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            else:
+                COUNTER = 0
+                ALARM_ON = False
+                pygame.mixer.stop()
+
+    cv2.imshow('Monitor de Vigia - Inovatech', image)
+
+    if cv2.waitKey(5) & 0xFF == ord('q'):
+        break
+
+# --- FINALIZAÇÃO ---
+cap.release()
+cv2.destroyAllWindows()
+face_mesh.close()
+pygame.quit()
