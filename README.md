@@ -1,1 +1,1 @@
-Esse aqui [e o projeto do grupo Inovatech sobre 
+Esse aqui é o projeto do grupo Inovatech. O projeto consiste em um monitorador de Fadiga 
